@@ -8,7 +8,10 @@ python-dotenv==1.0.0
 # chromadb in production, consider using a hosted/vector DB service
 # (Chroma Cloud, Pinecone, Weaviate) or pin a chromadb version known
 # to be compatible with the runtime. Example safe pins you can try:
-# chromadb==1.1.1
+# Use a released chromadb version known to exist on PyPI for Python 3.13
+# (the build logs showed versions up to 1.1.1). If install fails, remove
+# chromadb and use an external vector DB instead.
+chromadb==1.1.1
 # or
 # chromadb==0.5.23
 # For TensorFlow, prefer the CPU wheel to avoid GPU build steps:
