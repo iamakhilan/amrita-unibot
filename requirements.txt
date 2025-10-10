@@ -1,8 +1,15 @@
 streamlit==1.28.2
 requests==2.31.0
 python-dotenv==1.0.0
-chromadb==0.3.32
-tensorflow==2.14.1
 
-# Optional / platform-specific (uncomment if needed)
-# tensorflow-cpu==2.14.1  # use CPU-only build on machines without GPU
+# NOTE: chromadb and tensorflow were removed temporarily because they
+# may require specific Python versions or system dependencies not
+# available in Streamlit Cloud's build environment. If you need
+# chromadb in production, consider using a hosted/vector DB service
+# (Chroma Cloud, Pinecone, Weaviate) or pin a chromadb version known
+# to be compatible with the runtime. Example safe pins you can try:
+# chromadb==1.1.1
+# or
+# chromadb==0.5.23
+# For TensorFlow, prefer the CPU wheel to avoid GPU build steps:
+# tensorflow-cpu==2.14.1
