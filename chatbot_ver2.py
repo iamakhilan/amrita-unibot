@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import os
 import time
+import re
 from datetime import datetime
 from typing import Dict, List, Tuple
 from dotenv import load_dotenv
@@ -25,6 +26,15 @@ st.set_page_config(
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
 FIXED_MODEL = "openai/gpt-4o-mini"
 FIXED_TEMPERATURE = 0.7
+
+# Pre-compile regex patterns for better performance
+REGEX_BOLD_DOUBLE_STAR = re.compile(r'\*\*(.*?)\*\*')
+REGEX_BOLD_DOUBLE_UNDERSCORE = re.compile(r'__(.*?)__')
+REGEX_ITALIC_STAR = re.compile(r'(?<!\*)\*(?!\*)([^\*]+)(?<!\*)\*(?!\*)')
+REGEX_ITALIC_UNDERSCORE = re.compile(r'(?<!_)_(?!_)([^_]+)(?<!_)_(?!_)')
+REGEX_CODE_BLOCK = re.compile(r'```(.*?)```', re.DOTALL)
+REGEX_INLINE_CODE = re.compile(r'`([^`]+)`')
+REGEX_NUMBERED_LIST = re.compile(r'(\d+)\.\s+')
 
 # Knowledge base
 KNOWLEDGE_BASE = """
@@ -110,21 +120,20 @@ def format_message_content(content):
     # Escape HTML to prevent XSS
     content = html.escape(content)
     
-    # Convert markdown-style formatting to HTML
+    # Convert markdown-style formatting to HTML using pre-compiled patterns
     # Bold: **text** or __text__
-    import re
-    content = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', content)
-    content = re.sub(r'__(.*?)__', r'<strong>\1</strong>', content)
+    content = REGEX_BOLD_DOUBLE_STAR.sub(r'<strong>\1</strong>', content)
+    content = REGEX_BOLD_DOUBLE_UNDERSCORE.sub(r'<strong>\1</strong>', content)
     
     # Italic: *text* or _text_
-    content = re.sub(r'(?<!\*)\*(?!\*)([^\*]+)(?<!\*)\*(?!\*)', r'<em>\1</em>', content)
-    content = re.sub(r'(?<!_)_(?!_)([^_]+)(?<!_)_(?!_)', r'<em>\1</em>', content)
+    content = REGEX_ITALIC_STAR.sub(r'<em>\1</em>', content)
+    content = REGEX_ITALIC_UNDERSCORE.sub(r'<em>\1</em>', content)
     
     # Code blocks: ```code```
-    content = re.sub(r'```(.*?)```', r'<code style="background: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-family: monospace;">\1</code>', content, flags=re.DOTALL)
+    content = REGEX_CODE_BLOCK.sub(r'<code style="background: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-family: monospace;">\1</code>', content)
     
     # Inline code: `code`
-    content = re.sub(r'`([^`]+)`', r'<code style="background: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-family: monospace;">\1</code>', content)
+    content = REGEX_INLINE_CODE.sub(r'<code style="background: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-family: monospace;">\1</code>', content)
     
     # Line breaks: Convert \n to <br>
     content = content.replace('\n', '<br>')
@@ -155,7 +164,7 @@ def format_message_content(content):
     content = '<br>'.join(formatted_lines)
     
     # Numbers lists: 1. item, 2. item
-    content = re.sub(r'(\d+)\.\s+', r'<strong>\1.</strong> ', content)
+    content = REGEX_NUMBERED_LIST.sub(r'<strong>\1.</strong> ', content)
     
     return content
 
@@ -184,104 +193,320 @@ def make_api_request(messages, api_key):
         st.error(f"❌ API request failed: {str(e)}")
         return None
 
+def get_shared_styles():
+    """Return shared CSS styles to avoid duplication"""
+    return """
+    <style>
+    /* --- GLOBAL STYLES --- */
+    * {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    
+    body {
+        background-color: #f0f2f6;
+    }
+
+    /* --- LOGIN & SIGNUP PAGES --- */
+    .login-container, .signup-container {
+        max-width: 480px;
+        margin: 40px auto;
+        padding: 40px;
+        border-radius: 20px;
+        background: #ffffff;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+        border-top: 5px solid #667eea;
+    }
+    
+    .login-header, .signup-header {
+        text-align: center;
+        margin-bottom: 35px;
+    }
+    
+    .login-header h1, .signup-header h1 {
+        font-size: 2.4em;
+        font-weight: 700;
+        color: #2c3e50;
+        margin: 15px 0 5px 0;
+    }
+    
+    .login-header h3, .signup-header h3 {
+        font-size: 1.1em;
+        font-weight: 400;
+        color: #6c757d;
+    }
+    
+    /* Input field styling */
+    .stTextInput input {
+        border-radius: 10px !important;
+        border: 2px solid #e0e6ed !important;
+        background: #f8f9fa !important;
+        padding: 14px 18px !important;
+        font-size: 16px !important;
+        color: #333 !important;
+        transition: all 0.3s ease;
+    }
+    
+    .stTextInput input:focus {
+        border-color: #667eea !important;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15) !important;
+    }
+    
+    /* Button styling */
+    .stButton > button {
+        width: 100%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        color: white !important;
+        padding: 14px 24px !important;
+        border: none !important;
+        border-radius: 10px !important;
+        cursor: pointer;
+        font-size: 17px !important;
+        font-weight: 600 !important;
+        transition: all 0.3s ease !important;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3) !important;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4) !important;
+    }
+    
+    .navigation-button button {
+        background: transparent !important;
+        color: #667eea !important;
+        border: none !important;
+        text-decoration: none;
+        font-size: 15px !important;
+        padding: 10px !important;
+        font-weight: 600 !important;
+    }
+    
+    .navigation-button button:hover {
+        text-decoration: underline !important;
+        background: transparent !important;
+        transform: none !important;
+        box-shadow: none !important;
+    }
+    </style>
+    """
+
+def get_chat_styles():
+    """Return chat interface specific CSS styles"""
+    return """
+    <style>
+    /* --- GLOBAL STYLES --- */
+    * {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    
+    body {
+        background-color: #f0f2f6;
+    }
+
+    /* Main container */
+    .main .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+    }
+    
+    /* Chat messages container */
+    .chat-messages-container {
+        background: #ffffff;
+        border-radius: 15px;
+        padding: 25px;
+        margin-bottom: 20px;
+        max-height: 600px;
+        overflow-y: auto;
+        box-shadow: 0 5px 25px rgba(0,0,0,0.07);
+    }
+    
+    /* User message bubble */
+    .user-message-bubble {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 14px 20px;
+        border-radius: 18px 18px 4px 18px;
+        margin: 10px 0 10px auto;
+        max-width: 75%;
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        animation: slideInRight 0.4s ease-out;
+        word-wrap: break-word;
+        line-height: 1.6;
+    }
+    
+    /* Bot message bubble */
+    .bot-message-bubble {
+        background: #e9ecef;
+        color: #2c3e50;
+        padding: 14px 20px;
+        border-radius: 18px 18px 18px 4px;
+        margin: 10px auto 10px 0;
+        max-width: 75%;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        animation: slideInLeft 0.4s ease-out;
+        word-wrap: break-word;
+        line-height: 1.7;
+    }
+    
+    .bot-message-bubble strong {
+        color: #667eea;
+        font-weight: 600;
+    }
+    
+    .bot-message-bubble ul {
+        margin: 10px 0;
+        padding-left: 20px;
+    }
+    
+    .bot-message-bubble li {
+        margin: 6px 0;
+    }
+    
+    /* Timestamp */
+    .message-timestamp {
+        font-size: 0.75em;
+        opacity: 0.65;
+        margin-top: 6px;
+        font-style: italic;
+    }
+    
+    /* Input styling */
+    .stTextInput input {
+        border-radius: 25px !important;
+        border: 2px solid #e0e6ed !important;
+        padding: 14px 22px !important;
+        font-size: 16px !important;
+        transition: all 0.3s ease !important;
+    }
+    
+    .stTextInput input:focus {
+        border-color: #667eea !important;
+        box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1) !important;
+    }
+    
+    /* Form submit button */
+    .stForm button[type="submit"] {
+        border-radius: 50% !important;
+        width: 55px !important;
+        height: 55px !important;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        color: white !important;
+        border: none !important;
+        font-size: 22px !important;
+        cursor: pointer;
+        transition: all 0.3s ease !important;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4) !important;
+    }
+    
+    .stForm button[type="submit"]:hover {
+        transform: scale(1.08) !important;
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5) !important;
+    }
+    
+    /* Sidebar styling */
+    .css-1d391kg, [data-testid="stSidebar"] {
+        background: #ffffff;
+        border-right: 1px solid #e0e6ed;
+    }
+    
+    .sidebar-content {
+        padding: 15px 10px;
+    }
+    
+    .user-info-card {
+        text-align: center;
+        padding: 25px;
+        background: linear-gradient(135deg, #f5f7fa 0%, #e8edf3 100%);
+        border-radius: 15px;
+        margin-bottom: 20px;
+        border: 1px solid #e0e6ed;
+    }
+    
+    .user-info-card h3 {
+        color: #667eea;
+        font-size: 1.4em;
+        margin: 10px 0;
+        font-weight: 600;
+    }
+    
+    .user-info-card p {
+        color: #6c757d;
+        font-size: 0.95em;
+        line-height: 1.6;
+        margin: 8px 0;
+    }
+    
+    /* Sidebar buttons */
+    .stSidebar .stButton button {
+        background: #667eea !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 10px !important;
+        padding: 12px 20px !important;
+        font-weight: 600 !important;
+        transition: all 0.3s ease !important;
+        width: 100%;
+        font-size: 15px !important;
+    }
+    
+    .stSidebar .stButton button:hover {
+        background: #764ba2 !important;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3) !important;
+    }
+    
+    /* Conversation history buttons */
+    [data-testid="stSidebar"] button[kind="secondary"] {
+        background: #f8f9fa !important;
+        border: 1px solid #dee2e6 !important;
+        color: #495057 !important;
+        text-align: left !important;
+        padding: 12px 15px !important;
+        margin: 6px 0 !important;
+        border-radius: 8px !important;
+        font-size: 14px !important;
+        transition: all 0.2s ease !important;
+    }
+    
+    [data-testid="stSidebar"] button[kind="secondary"]:hover {
+        background: #e9ecef !important;
+        border-color: #667eea !important;
+        transform: translateX(5px);
+    }
+    
+    /* Divider styling */
+    .stSidebar hr {
+        margin: 20px 0;
+        border: none;
+        height: 1px;
+        background: #e0e6ed;
+    }
+    
+    /* Animations */
+    @keyframes slideInRight {
+        from { transform: translateX(50px); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+    
+    @keyframes slideInLeft {
+        from { transform: translateX(-50px); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+    
+    /* Scrollbar styling */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
+    ::-webkit-scrollbar-thumb { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: linear-gradient(135deg, #764ba2 0%, #667eea 100%); }
+    </style>
+    """
+
+
 def login_page():
     """Display login page"""
-    st.markdown("""
-    <style>
-    /* --- GLOBAL STYLES --- */
-    * {
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-    
-    body {
-        background-color: #f0f2f6;
-    }
-
-    /* --- LOGIN & SIGNUP PAGES --- */
-    .login-container, .signup-container {
-        max-width: 480px;
-        margin: 40px auto;
-        padding: 40px;
-        border-radius: 20px;
-        background: #ffffff;
-        box-shadow: 0 10px 40px rgba(0,0,0,0.1);
-        border-top: 5px solid #667eea;
-    }
-    
-    .login-header, .signup-header {
-        text-align: center;
-        margin-bottom: 35px;
-    }
-    
-    .login-header h1, .signup-header h1 {
-        font-size: 2.4em;
-        font-weight: 700;
-        color: #2c3e50;
-        margin: 15px 0 5px 0;
-    }
-    
-    .login-header h3, .signup-header h3 {
-        font-size: 1.1em;
-        font-weight: 400;
-        color: #6c757d;
-    }
-    
-    /* Input field styling */
-    .stTextInput input {
-        border-radius: 10px !important;
-        border: 2px solid #e0e6ed !important;
-        background: #f8f9fa !important;
-        padding: 14px 18px !important;
-        font-size: 16px !important;
-        color: #333 !important;
-        transition: all 0.3s ease;
-    }
-    
-    .stTextInput input:focus {
-        border-color: #667eea !important;
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15) !important;
-    }
-    
-    /* Button styling */
-    .stButton > button {
-        width: 100%;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-        color: white !important;
-        padding: 14px 24px !important;
-        border: none !important;
-        border-radius: 10px !important;
-        cursor: pointer;
-        font-size: 17px !important;
-        font-weight: 600 !important;
-        transition: all 0.3s ease !important;
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3) !important;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-    
-    .stButton > button:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4) !important;
-    }
-    
-    .navigation-button button {
-        background: transparent !important;
-        color: #667eea !important;
-        border: none !important;
-        text-decoration: none;
-        font-size: 15px !important;
-        padding: 10px !important;
-        font-weight: 600 !important;
-    }
-    
-    .navigation-button button:hover {
-        text-decoration: underline !important;
-        background: transparent !important;
-        transform: none !important;
-        box-shadow: none !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+    st.markdown(get_shared_styles(), unsafe_allow_html=True)
     
     with st.container():
         st.markdown('<div class="login-container">', unsafe_allow_html=True)
@@ -332,102 +557,7 @@ def login_page():
 
 def signup_page():
     """Display signup page"""
-    st.markdown("""
-    <style>
-    /* --- GLOBAL STYLES --- */
-    * {
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-    
-    body {
-        background-color: #f0f2f6;
-    }
-
-    /* --- LOGIN & SIGNUP PAGES --- */
-    .login-container, .signup-container {
-        max-width: 480px;
-        margin: 40px auto;
-        padding: 40px;
-        border-radius: 20px;
-        background: #ffffff;
-        box-shadow: 0 10px 40px rgba(0,0,0,0.1);
-        border-top: 5px solid #667eea;
-    }
-    
-    .login-header, .signup-header {
-        text-align: center;
-        margin-bottom: 35px;
-    }
-    
-    .login-header h1, .signup-header h1 {
-        font-size: 2.4em;
-        font-weight: 700;
-        color: #2c3e50;
-        margin: 15px 0 5px 0;
-    }
-    
-    .login-header h3, .signup-header h3 {
-        font-size: 1.1em;
-        font-weight: 400;
-        color: #6c757d;
-    }
-    
-    /* Input field styling */
-    .stTextInput input {
-        border-radius: 10px !important;
-        border: 2px solid #e0e6ed !important;
-        background: #f8f9fa !important;
-        padding: 14px 18px !important;
-        font-size: 16px !important;
-        color: #333 !important;
-        transition: all 0.3s ease;
-    }
-    
-    .stTextInput input:focus {
-        border-color: #667eea !important;
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15) !important;
-    }
-    
-    /* Button styling */
-    .stButton > button {
-        width: 100%;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-        color: white !important;
-        padding: 14px 24px !important;
-        border: none !important;
-        border-radius: 10px !important;
-        cursor: pointer;
-        font-size: 17px !important;
-        font-weight: 600 !important;
-        transition: all 0.3s ease !important;
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3) !important;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-    
-    .stButton > button:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4) !important;
-    }
-    
-    .navigation-button button {
-        background: transparent !important;
-        color: #667eea !important;
-        border: none !important;
-        text-decoration: none;
-        font-size: 15px !important;
-        padding: 10px !important;
-        font-weight: 600 !important;
-    }
-    
-    .navigation-button button:hover {
-        text-decoration: underline !important;
-        background: transparent !important;
-        transform: none !important;
-        box-shadow: none !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+    st.markdown(get_shared_styles(), unsafe_allow_html=True)
     
     with st.container():
         st.markdown('<div class="signup-container">', unsafe_allow_html=True)
@@ -490,867 +620,7 @@ def signup_page():
 
 def chat_interface():
     """Main chat interface"""
-    # Custom CSS for modern, beautiful UI
-    st.markdown("""
-    <style>
-    /* --- GLOBAL STYLES --- */
-    * {
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-    
-    body {
-        background-color: #f0f2f6;
-    }
-
-    /* Main container */
-    .main .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
-    }
-    
-    /* Chat messages container */
-    .chat-messages-container {
-        background: #ffffff;
-        border-radius: 15px;
-        padding: 25px;
-        margin-bottom: 20px;
-        max-height: 600px;
-        overflow-y: auto;
-        box-shadow: 0 5px 25px rgba(0,0,0,0.07);
-    }
-    
-    /* User message bubble */
-    .user-message-bubble {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 14px 20px;
-        border-radius: 18px 18px 4px 18px;
-        margin: 10px 0 10px auto;
-        max-width: 75%;
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-        animation: slideInRight 0.4s ease-out;
-        word-wrap: break-word;
-        line-height: 1.6;
-    }
-    
-    /* Bot message bubble */
-    .bot-message-bubble {
-        background: #e9ecef;
-        color: #2c3e50;
-        padding: 14px 20px;
-        border-radius: 18px 18px 18px 4px;
-        margin: 10px auto 10px 0;
-        max-width: 75%;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-        animation: slideInLeft 0.4s ease-out;
-        word-wrap: break-word;
-        line-height: 1.7;
-    }
-    
-    .bot-message-bubble strong {
-        color: #667eea;
-        font-weight: 600;
-    }
-    
-    .bot-message-bubble ul {
-        margin: 10px 0;
-        padding-left: 20px;
-    }
-    
-    .bot-message-bubble li {
-        margin: 6px 0;
-    }
-    
-    /* Timestamp */
-    .message-timestamp {
-        font-size: 0.75em;
-        opacity: 0.65;
-        margin-top: 6px;
-        font-style: italic;
-    }
-    
-    /* Input styling */
-    .stTextInput input {
-        border-radius: 25px !important;
-        border: 2px solid #e0e6ed !important;
-        padding: 14px 22px !important;
-        font-size: 16px !important;
-        transition: all 0.3s ease !important;
-    }
-    
-    .stTextInput input:focus {
-        border-color: #667eea !important;
-        box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1) !important;
-    }
-    
-    /* Form submit button */
-    .stForm button[type="submit"] {
-        border-radius: 50% !important;
-        width: 55px !important;
-        height: 55px !important;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-        color: white !important;
-        border: none !important;
-        font-size: 22px !important;
-        cursor: pointer;
-        transition: all 0.3s ease !important;
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4) !important;
-    }
-    
-    .stForm button[type="submit"]:hover {
-        transform: scale(1.08) !important;
-        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5) !important;
-    }
-    
-    /* Sidebar styling */
-    .css-1d391kg, [data-testid="stSidebar"] {
-        background: #ffffff;
-        border-right: 1px solid #e0e6ed;
-    }
-    
-    .sidebar-content {
-        padding: 15px 10px;
-    }
-    
-    .user-info-card {
-        text-align: center;
-        padding: 25px;
-        background: linear-gradient(135deg, #f5f7fa 0%, #e8edf3 100%);
-        border-radius: 15px;
-        margin-bottom: 20px;
-        border: 1px solid #e0e6ed;
-    }
-    
-    .user-info-card h3 {
-        color: #667eea;
-        font-size: 1.4em;
-        margin: 10px 0;
-        font-weight: 600;
-    }
-    
-    .user-info-card p {
-        color: #6c757d;
-        font-size: 0.95em;
-        line-height: 1.6;
-        margin: 8px 0;
-    }
-    
-    /* Sidebar buttons */
-    .stSidebar .stButton button {
-        background: #667eea !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 10px !important;
-        padding: 12px 20px !important;
-        font-weight: 600 !important;
-        transition: all 0.3s ease !important;
-        width: 100%;
-        font-size: 15px !important;
-    }
-    
-    .stSidebar .stButton button:hover {
-        background: #764ba2 !important;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3) !important;
-    }
-    
-    /* Conversation history buttons */
-    [data-testid="stSidebar"] button[kind="secondary"] {
-        background: #f8f9fa !important;
-        border: 1px solid #dee2e6 !important;
-        color: #495057 !important;
-        text-align: left !important;
-        padding: 12px 15px !important;
-        margin: 6px 0 !important;
-        border-radius: 8px !important;
-        font-size: 14px !important;
-        transition: all 0.2s ease !important;
-    }
-    
-    [data-testid="stSidebar"] button[kind="secondary"]:hover {
-        background: #e9ecef !important;
-        border-color: #667eea !important;
-        transform: translateX(5px);
-    }
-    
-    /* Divider styling */
-    .stSidebar hr {
-        margin: 20px 0;
-        border: none;
-        height: 1px;
-        background: #e0e6ed;
-    }
-    
-    /* Animations */
-    @keyframes slideInRight {
-        from { transform: translateX(50px); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
-    }
-    
-    @keyframes slideInLeft {
-        from { transform: translateX(-50px); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
-    }
-    
-    /* Scrollbar styling */
-    ::-webkit-scrollbar { width: 8px; height: 8px; }
-    ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
-    ::-webkit-scrollbar-thumb { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; }
-    ::-webkit-scrollbar-thumb:hover { background: linear-gradient(135deg, #764ba2 0%, #667eea 100%); }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    with st.container():
-        st.markdown('<div class="login-container">', unsafe_allow_html=True)
-        
-        st.markdown('<div class="login-header">', unsafe_allow_html=True)
-        st.image("https://www.amrita.edu/sites/default/files/amrita-logo.png", width=100)
-        st.markdown('<h1>Welcome Back</h1>', unsafe_allow_html=True)
-        st.markdown('<h3>Login to access Amrita UniBot</h3>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        with st.form("login_form"):
-            roll_number = st.text_input("📝 Roll Number", placeholder="Enter your roll number")
-            password = st.text_input("🔒 Password", type="password", placeholder="Enter your password")
-            
-            st.markdown("<br>", unsafe_allow_html=True)
-            
-            login_submit = st.form_submit_button("🚀 Login")
-        
-        if login_submit:
-            if roll_number and password:
-                roll_number = roll_number.strip()
-                password = password.strip()
-                
-                success, user_data = db.authenticate_user(roll_number, password)
-                if success:
-                    st.session_state.authenticated = True
-                    st.session_state.user = user_data
-                    st.session_state.show_login = False
-                    st.success(f"✅ Welcome back, {user_data['full_name']}!")
-                    time.sleep(1)
-                    st.rerun()
-                else:
-                    st.error("❌ Invalid roll number or password")
-            else:
-                st.error("⚠️ Please fill in all fields")
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        # Navigation to signup
-        st.markdown('<div class="navigation-button" style="text-align: center;">', unsafe_allow_html=True)
-        if st.button("✨ New to UniBot? Sign up here", use_container_width=True, key="goto_signup"):
-            st.session_state.show_signup = True
-            st.session_state.show_login = False
-            st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-
-def signup_page():
-    """Display signup page"""
-    st.markdown("""
-    <style>
-    /* Using the same styles as login for consistency */
-    </style>
-    """, unsafe_allow_html=True)
-    
-    with st.container():
-        st.markdown('<div class="signup-container">', unsafe_allow_html=True)
-        
-        st.markdown('<div class="signup-header">', unsafe_allow_html=True)
-        st.image("https://www.amrita.edu/sites/default/files/amrita-logo.png", width=100)
-        st.markdown('<h1>Create Your Account</h1>', unsafe_allow_html=True)
-        st.markdown('<h3>Join UniBot to get started</h3>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        with st.form("signup_form"):
-            full_name = st.text_input("👤 Full Name", placeholder="Enter your full name")
-            roll_number = st.text_input("📝 Roll Number", placeholder="Enter your roll number")
-            email = st.text_input("📧 Email (Optional)", placeholder="Enter your email")
-            department = st.text_input("🏛️ Department (Optional)", placeholder="Enter your department")
-            password = st.text_input("🔒 Password", type="password", placeholder="Create a password (min 6 characters)")
-            confirm_password = st.text_input("🔐 Confirm Password", type="password", placeholder="Confirm your password")
-            
-            st.markdown("<br>", unsafe_allow_html=True)
-            signup_submit = st.form_submit_button("🎉 Create Account")
-        
-        if signup_submit:
-            if all([full_name, roll_number, password, confirm_password]):
-                full_name = full_name.strip()
-                roll_number = roll_number.strip()
-                email = email.strip() if email else None
-                department = department.strip() if department else None
-                password = password.strip()
-                confirm_password = confirm_password.strip()
-                
-                if password == confirm_password:
-                    if len(password) >= 6:
-                        success, message = db.create_user(roll_number, password, full_name, email, department)
-                        if success:
-                            st.success("✅ Account created successfully! Please login.")
-                            time.sleep(2)
-                            st.session_state.show_signup = False
-                            st.session_state.show_login = True
-                            st.rerun()
-                        else:
-                            st.error(f"❌ {message}")
-                    else:
-                        st.error("⚠️ Password must be at least 6 characters long")
-                else:
-                    st.error("❌ Passwords do not match")
-            else:
-                st.error("⚠️ Please fill in all required fields")
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        # Navigation to login
-        st.markdown('<div class="navigation-button" style="text-align: center;">', unsafe_allow_html=True)
-        if st.button("🔙 Already have an account? Login here", use_container_width=True, key="goto_login"):
-            st.session_state.show_signup = False
-            st.session_state.show_login = True
-            st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-
-def chat_interface():
-    """Main chat interface"""
-    # Custom CSS for modern, beautiful UI
-    st.markdown("""
-    <style>
-    /* --- GLOBAL STYLES --- */
-    * {
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-    
-    body {
-        background-color: #f0f2f6;
-    }
-
-    /* Main container */
-    .main .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
-    }
-    
-    /* Chat messages container */
-    .chat-messages-container {
-        background: #ffffff;
-        border-radius: 15px;
-        padding: 25px;
-        margin-bottom: 20px;
-        max-height: 600px;
-        overflow-y: auto;
-        box-shadow: 0 5px 25px rgba(0,0,0,0.07);
-    }
-    
-    /* User message bubble */
-    .user-message-bubble {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 14px 20px;
-        border-radius: 18px 18px 4px 18px;
-        margin: 10px 0 10px auto;
-        max-width: 75%;
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-        animation: slideInRight 0.4s ease-out;
-        word-wrap: break-word;
-        line-height: 1.6;
-    }
-    
-    /* Bot message bubble */
-    .bot-message-bubble {
-        background: #e9ecef;
-        color: #2c3e50;
-        padding: 14px 20px;
-        border-radius: 18px 18px 18px 4px;
-        margin: 10px auto 10px 0;
-        max-width: 75%;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-        animation: slideInLeft 0.4s ease-out;
-        word-wrap: break-word;
-        line-height: 1.7;
-    }
-    
-    .bot-message-bubble strong {
-        color: #667eea;
-        font-weight: 600;
-    }
-    
-    .bot-message-bubble ul {
-        margin: 10px 0;
-        padding-left: 20px;
-    }
-    
-    .bot-message-bubble li {
-        margin: 6px 0;
-    }
-    
-    /* Timestamp */
-    .message-timestamp {
-        font-size: 0.75em;
-        opacity: 0.65;
-        margin-top: 6px;
-        font-style: italic;
-    }
-    
-    /* Input styling */
-    .stTextInput input {
-        border-radius: 25px !important;
-        border: 2px solid #e0e6ed !important;
-        padding: 14px 22px !important;
-        font-size: 16px !important;
-        transition: all 0.3s ease !important;
-    }
-    
-    .stTextInput input:focus {
-        border-color: #667eea !important;
-        box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1) !important;
-    }
-    
-    /* Form submit button */
-    .stForm button[type="submit"] {
-        border-radius: 50% !important;
-        width: 55px !important;
-        height: 55px !important;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-        color: white !important;
-        border: none !important;
-        font-size: 22px !important;
-        cursor: pointer;
-        transition: all 0.3s ease !important;
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4) !important;
-    }
-    
-    .stForm button[type="submit"]:hover {
-        transform: scale(1.08) !important;
-        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5) !important;
-    }
-    
-    /* Sidebar styling */
-    .css-1d391kg, [data-testid="stSidebar"] {
-        background: #ffffff;
-        border-right: 1px solid #e0e6ed;
-    }
-    
-    .sidebar-content {
-        padding: 15px 10px;
-    }
-    
-    .user-info-card {
-        text-align: center;
-        padding: 25px;
-        background: linear-gradient(135deg, #f5f7fa 0%, #e8edf3 100%);
-        border-radius: 15px;
-        margin-bottom: 20px;
-        border: 1px solid #e0e6ed;
-    }
-    
-    .user-info-card h3 {
-        color: #667eea;
-        font-size: 1.4em;
-        margin: 10px 0;
-        font-weight: 600;
-    }
-    
-    .user-info-card p {
-        color: #6c757d;
-        font-size: 0.95em;
-        line-height: 1.6;
-        margin: 8px 0;
-    }
-    
-    /* Sidebar buttons */
-    .stSidebar .stButton button {
-        background: #667eea !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 10px !important;
-        padding: 12px 20px !important;
-        font-weight: 600 !important;
-        transition: all 0.3s ease !important;
-        width: 100%;
-        font-size: 15px !important;
-    }
-    
-    .stSidebar .stButton button:hover {
-        background: #764ba2 !important;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3) !important;
-    }
-    
-    /* Conversation history buttons */
-    [data-testid="stSidebar"] button[kind="secondary"] {
-        background: #f8f9fa !important;
-        border: 1px solid #dee2e6 !important;
-        color: #495057 !important;
-        text-align: left !important;
-        padding: 12px 15px !important;
-        margin: 6px 0 !important;
-        border-radius: 8px !important;
-        font-size: 14px !important;
-        transition: all 0.2s ease !important;
-    }
-    
-    [data-testid="stSidebar"] button[kind="secondary"]:hover {
-        background: #e9ecef !important;
-        border-color: #667eea !important;
-        transform: translateX(5px);
-    }
-    
-    /* Divider styling */
-    .stSidebar hr {
-        margin: 20px 0;
-        border: none;
-        height: 1px;
-        background: #e0e6ed;
-    }
-    
-    /* Animations */
-    @keyframes slideInRight {
-        from { transform: translateX(50px); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
-    }
-    
-    @keyframes slideInLeft {
-        from { transform: translateX(-50px); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
-    }
-    
-    /* Scrollbar styling */
-    ::-webkit-scrollbar { width: 8px; height: 8px; }
-    ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
-    ::-webkit-scrollbar-thumb { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; }
-    ::-webkit-scrollbar-thumb:hover { background: linear-gradient(135deg, #764ba2 0%, #667eea 100%); }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    with st.container():
-        st.markdown('<div class="login-container">', unsafe_allow_html=True)
-        
-        st.markdown('<div class="login-header">', unsafe_allow_html=True)
-        st.image("https://www.amrita.edu/sites/default/files/amrita-logo.png", width=100)
-        st.markdown('<h1>Welcome Back</h1>', unsafe_allow_html=True)
-        st.markdown('<h3>Login to access Amrita UniBot</h3>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        with st.form("login_form"):
-            roll_number = st.text_input("📝 Roll Number", placeholder="Enter your roll number")
-            password = st.text_input("🔒 Password", type="password", placeholder="Enter your password")
-            
-            st.markdown("<br>", unsafe_allow_html=True)
-            
-            login_submit = st.form_submit_button("🚀 Login")
-        
-        if login_submit:
-            if roll_number and password:
-                roll_number = roll_number.strip()
-                password = password.strip()
-                
-                success, user_data = db.authenticate_user(roll_number, password)
-                if success:
-                    st.session_state.authenticated = True
-                    st.session_state.user = user_data
-                    st.session_state.show_login = False
-                    st.success(f"✅ Welcome back, {user_data['full_name']}!")
-                    time.sleep(1)
-                    st.rerun()
-                else:
-                    st.error("❌ Invalid roll number or password")
-            else:
-                st.error("⚠️ Please fill in all fields")
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        # Navigation to signup
-        st.markdown('<div class="navigation-button" style="text-align: center;">', unsafe_allow_html=True)
-        if st.button("✨ New to UniBot? Sign up here", use_container_width=True, key="goto_signup"):
-            st.session_state.show_signup = True
-            st.session_state.show_login = False
-            st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-
-def signup_page():
-    """Display signup page"""
-    st.markdown("""
-    <style>
-    /* Using the same styles as login for consistency */
-    </style>
-    """, unsafe_allow_html=True)
-    
-    with st.container():
-        st.markdown('<div class="signup-container">', unsafe_allow_html=True)
-        
-        st.markdown('<div class="signup-header">', unsafe_allow_html=True)
-        st.image("https://www.amrita.edu/sites/default/files/amrita-logo.png", width=100)
-        st.markdown('<h1>Create Your Account</h1>', unsafe_allow_html=True)
-        st.markdown('<h3>Join UniBot to get started</h3>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        with st.form("signup_form"):
-            full_name = st.text_input("👤 Full Name", placeholder="Enter your full name")
-            roll_number = st.text_input("📝 Roll Number", placeholder="Enter your roll number")
-            email = st.text_input("📧 Email (Optional)", placeholder="Enter your email")
-            department = st.text_input("🏛️ Department (Optional)", placeholder="Enter your department")
-            password = st.text_input("🔒 Password", type="password", placeholder="Create a password (min 6 characters)")
-            confirm_password = st.text_input("🔐 Confirm Password", type="password", placeholder="Confirm your password")
-            
-            st.markdown("<br>", unsafe_allow_html=True)
-            signup_submit = st.form_submit_button("🎉 Create Account")
-        
-        if signup_submit:
-            if all([full_name, roll_number, password, confirm_password]):
-                full_name = full_name.strip()
-                roll_number = roll_number.strip()
-                email = email.strip() if email else None
-                department = department.strip() if department else None
-                password = password.strip()
-                confirm_password = confirm_password.strip()
-                
-                if password == confirm_password:
-                    if len(password) >= 6:
-                        success, message = db.create_user(roll_number, password, full_name, email, department)
-                        if success:
-                            st.success("✅ Account created successfully! Please login.")
-                            time.sleep(2)
-                            st.session_state.show_signup = False
-                            st.session_state.show_login = True
-                            st.rerun()
-                        else:
-                            st.error(f"❌ {message}")
-                    else:
-                        st.error("⚠️ Password must be at least 6 characters long")
-                else:
-                    st.error("❌ Passwords do not match")
-            else:
-                st.error("⚠️ Please fill in all required fields")
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        # Navigation to login
-        st.markdown('<div class="navigation-button" style="text-align: center;">', unsafe_allow_html=True)
-        if st.button("🔙 Already have an account? Login here", use_container_width=True, key="goto_login"):
-            st.session_state.show_signup = False
-            st.session_state.show_login = True
-            st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-
-def chat_interface():
-    """Main chat interface"""
-    # Custom CSS for modern, beautiful UI
-    st.markdown("""
-    <style>
-    /* --- GLOBAL STYLES --- */
-    * {
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-    
-    body {
-        background-color: #f0f2f6;
-    }
-
-    /* Main container */
-    .main .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
-    }
-    
-    /* Chat messages container */
-    .chat-messages-container {
-        background: #ffffff;
-        border-radius: 15px;
-        padding: 25px;
-        margin-bottom: 20px;
-        max-height: 600px;
-        overflow-y: auto;
-        box-shadow: 0 5px 25px rgba(0,0,0,0.07);
-    }
-    
-    /* User message bubble */
-    .user-message-bubble {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 14px 20px;
-        border-radius: 18px 18px 4px 18px;
-        margin: 10px 0 10px auto;
-        max-width: 75%;
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-        animation: slideInRight 0.4s ease-out;
-        word-wrap: break-word;
-        line-height: 1.6;
-    }
-    
-    /* Bot message bubble */
-    .bot-message-bubble {
-        background: #e9ecef;
-        color: #2c3e50;
-        padding: 14px 20px;
-        border-radius: 18px 18px 18px 4px;
-        margin: 10px auto 10px 0;
-        max-width: 75%;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-        animation: slideInLeft 0.4s ease-out;
-        word-wrap: break-word;
-        line-height: 1.7;
-    }
-    
-    .bot-message-bubble strong {
-        color: #667eea;
-        font-weight: 600;
-    }
-    
-    .bot-message-bubble ul {
-        margin: 10px 0;
-        padding-left: 20px;
-    }
-    
-    .bot-message-bubble li {
-        margin: 6px 0;
-    }
-    
-    /* Timestamp */
-    .message-timestamp {
-        font-size: 0.75em;
-        opacity: 0.65;
-        margin-top: 6px;
-        font-style: italic;
-    }
-    
-    /* Input styling */
-    .stTextInput input {
-        border-radius: 25px !important;
-        border: 2px solid #e0e6ed !important;
-        padding: 14px 22px !important;
-        font-size: 16px !important;
-        transition: all 0.3s ease !important;
-    }
-    
-    .stTextInput input:focus {
-        border-color: #667eea !important;
-        box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1) !important;
-    }
-    
-    /* Form submit button */
-    .stForm button[type="submit"] {
-        border-radius: 50% !important;
-        width: 55px !important;
-        height: 55px !important;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-        color: white !important;
-        border: none !important;
-        font-size: 22px !important;
-        cursor: pointer;
-        transition: all 0.3s ease !important;
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4) !important;
-    }
-    
-    .stForm button[type="submit"]:hover {
-        transform: scale(1.08) !important;
-        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5) !important;
-    }
-    
-    /* Sidebar styling */
-    .css-1d391kg, [data-testid="stSidebar"] {
-        background: #ffffff;
-        border-right: 1px solid #e0e6ed;
-    }
-    
-    .sidebar-content {
-        padding: 15px 10px;
-    }
-    
-    .user-info-card {
-        text-align: center;
-        padding: 25px;
-        background: linear-gradient(135deg, #f5f7fa 0%, #e8edf3 100%);
-        border-radius: 15px;
-        margin-bottom: 20px;
-        border: 1px solid #e0e6ed;
-    }
-    
-    .user-info-card h3 {
-        color: #667eea;
-        font-size: 1.4em;
-        margin: 10px 0;
-        font-weight: 600;
-    }
-    
-    .user-info-card p {
-        color: #6c757d;
-        font-size: 0.95em;
-        line-height: 1.6;
-        margin: 8px 0;
-    }
-    
-    /* Sidebar buttons */
-    .stSidebar .stButton button {
-        background: #667eea !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 10px !important;
-        padding: 12px 20px !important;
-        font-weight: 600 !important;
-        transition: all 0.3s ease !important;
-        width: 100%;
-        font-size: 15px !important;
-    }
-    
-    .stSidebar .stButton button:hover {
-        background: #764ba2 !important;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3) !important;
-    }
-    
-    /* Conversation history buttons */
-    [data-testid="stSidebar"] button[kind="secondary"] {
-        background: #f8f9fa !important;
-        border: 1px solid #dee2e6 !important;
-        color: #495057 !important;
-        text-align: left !important;
-        padding: 12px 15px !important;
-        margin: 6px 0 !important;
-        border-radius: 8px !important;
-        font-size: 14px !important;
-        transition: all 0.2s ease !important;
-    }
-    
-    [data-testid="stSidebar"] button[kind="secondary"]:hover {
-        background: #e9ecef !important;
-        border-color: #667eea !important;
-        transform: translateX(5px);
-    }
-    
-    /* Divider styling */
-    .stSidebar hr {
-        margin: 20px 0;
-        border: none;
-        height: 1px;
-        background: #e0e6ed;
-    }
-    
-    /* Animations */
-    @keyframes slideInRight {
-        from { transform: translateX(50px); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
-    }
-    
-    @keyframes slideInLeft {
-        from { transform: translateX(-50px); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
-    }
-    
-    /* Scrollbar styling */
-    ::-webkit-scrollbar { width: 8px; height: 8px; }
-    ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
-    ::-webkit-scrollbar-thumb { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; }
-    ::-webkit-scrollbar-thumb:hover { background: linear-gradient(135deg, #764ba2 0%, #667eea 100%); }
-    </style>
-    """, unsafe_allow_html=True)
+    st.markdown(get_chat_styles(), unsafe_allow_html=True)
     
     with st.container():
         st.markdown('<div class="sidebar-content">', unsafe_allow_html=True)

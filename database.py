@@ -68,6 +68,15 @@ class DatabaseManager:
                 )
             ''')
             
+            # Create indexes for better query performance
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_roll_number ON users(roll_number)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_conversations_conversation_id ON conversations(conversation_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at DESC)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_feedback_user_id ON feedback(user_id)')
+            
             conn.commit()
     
     def hash_password(self, password: str) -> str:
